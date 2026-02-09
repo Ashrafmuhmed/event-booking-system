@@ -67,6 +67,45 @@ exports.postReservation = (req, res, next) => {
             );
         }
     )
+}
 
+exports.deleteReservation = (req, res, next) => {
+
+    const {eventId} = req.body;
+    const userId = req.user.id;
+
+    Reservation.findOne({
+        where: {
+            eventId, userId
+        }
+    }).then(
+        reservation => {
+
+            if (!reservation) {
+                throw new Error('Reservation not found.');
+            }
+
+            return Event.findByPk(eventId).then(
+                event => {
+                    if (!event) {
+                        throw new Error('Event doesnt exist');
+                    }
+                    event.availableCapacity += reservation.quantity;
+                    return event.save();
+                }
+            ).then(
+                _ => reservation.destroy()
+            )
+
+        }
+    ).then(
+        _ => {
+            res.status(201).json({
+                message: 'Reservation deleted',
+            })
+        }
+    ).catch(
+        err => next(err)
+    );
 
 }
