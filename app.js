@@ -7,6 +7,7 @@ const pgSession = require("connect-pg-simple")(session);
 const authRoutes = require("./routes/auth.routes");
 const eventsRoutes = require('./routes/events.routes');
 const userRoutes = require('./routes/users.routes');
+const reservationRoutes = require('./routes/reservation.routes');
 const {initAssociations} = require("./models/associations");
 const User = require("./models/user.model");
 const Event = require("./models/event.model");
@@ -49,7 +50,7 @@ app.use((req, res, next) => {
                     });
                 }
                 req.user = user;
-                console.log(user);
+                // console.log(user);
                 next();
             })
             .catch((err) => next(err));
@@ -59,10 +60,14 @@ app.use((req, res, next) => {
 app.use(authRoutes);
 app.use(isAuthenticated, eventsRoutes);
 app.use(isAuthenticated, userRoutes);
+app.use(isAuthenticated, reservationRoutes);
 
-app.use((err, req) => {
-    console.log("Something went wrong");
-    console.log(err);
+app.use((err, req, res, next) => {
+    console.error(err.message);
+
+    res.status(err.status || 500).json({
+        message: err.message || 'Internal Server Error'
+    });
 });
 
 sequelize

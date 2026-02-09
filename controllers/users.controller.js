@@ -51,3 +51,25 @@ exports.getEventsOrgByUser = (req, res, next) => {
     );
 
 };
+
+exports.getReservations = (req, res, next) => {
+
+    const userId = req.user.id;
+
+    Users.findByPk(
+        userId, {
+            attributes: ['username', 'email'],
+            include: [{
+                model: Events,
+                as: 'reservatedEvents',
+                attributes: ['title'],
+                through: {attributes: ['quantity', 'id']}
+            }]
+        }
+    ).then(
+        user => {
+            res.json(user);
+        }
+    )
+
+};

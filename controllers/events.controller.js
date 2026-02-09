@@ -113,7 +113,7 @@ exports.removeEvent = (req, res, next) => {
                     message: 'Event not found!',
                 });
             }
-            
+
             const {organizers} = event;
             let canDelete = false;
             organizers.forEach((organizer) => {
@@ -138,4 +138,69 @@ exports.removeEvent = (req, res, next) => {
     ).catch(error => next(error))
 
 
+};
+
+const extractReservations = (event) => {
+
+    const reservations = [];
+
+    event.reservations.forEach(
+        reservation => {
+            const res = {
+                reservationId: reservation.reservation.id,
+                username: reservation.username,
+                email: reservation.email,
+                quantity: reservation.reservation.quantity,
+            };
+            reservations.push(res);
+        }
+    );
+
+    return reservations;
+
 }
+
+exports.getEventReservations = (req, res, next) => {
+
+    const {eventId} = req.body;
+
+    Events.findByPk(eventId, {
+        include: [
+            {
+                model: Users,
+                as: 'organizers',
+                attributes: ['id'],
+                through: {
+                    attributes: []
+                }
+            },
+            {
+                model: Users,
+                as: 'reservations',
+            }
+        ]
+    }).then(
+        event => {
+
+            const {organizers} = event;
+            let canAccess = false;
+
+            organizers.forEach((organizer) => {
+                if (organizer.id === req.user.id)
+                    canAccess = true;
+            });
+
+            if (!canAccess)
+                throw new Error('You cant access this event, you are not organizer') ;
+
+            const reservations = extractReservations(event);
+
+            res.json({
+                status: 'success',
+                reservations,
+            });
+
+        }
+    ).catch(error => next(error));
+
+};
