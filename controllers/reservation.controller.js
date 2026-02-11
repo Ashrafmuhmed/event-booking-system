@@ -2,12 +2,14 @@ const Reservation = require('../models/reservations.model');
 const sequelize = require('../utils/db-connection');
 const Event = require('../models/event.model');
 const User = require('../models/user.model');
+const reservationQueue = require('../queues/queue_reservation_confirmation');
 
 exports.postReservation = (req, res, next) => {
 
     const {eventId, quantity} = req.body;
     const userId = req.user.id;
     console.log('Event reservation id ', eventId);
+    let confirmationData;
 
     sequelize.transaction(
         (transaction) => {
@@ -48,6 +50,25 @@ exports.postReservation = (req, res, next) => {
                                                 },
                                                 transaction
                                             },
+                                        ).then(
+                                            _ => {
+                                                return User.findByPk(userId, {
+                                                    include: [{
+                                                        model: Event,
+                                                        as: 'reservatedEvents'
+                                                    }],
+                                                    transaction
+                                                }).then(user => {
+                                                    const events = user.reservatedEvents;
+                                                    const reservationId = events.find(ev => ev.eventId === eventId).id;
+                                                    confirmationData = {
+                                                        username: user.username,
+                                                        email: user.email,
+                                                        eventName: event.eventName,
+                                                        reservationId
+                                                    };
+                                                })
+                                            }
                                         );
                                     }
                                 );
@@ -56,17 +77,21 @@ exports.postReservation = (req, res, next) => {
                         }
                     )
                 }
-            ).then(
-                _ => {
-                    return res.status(201).json({
-                        message: 'Reservation created',
-                    });
-                }
-            ).catch(
-                err => next(err)
-            );
+            )
         }
-    )
+    ).then(
+        _ => {
+            return reservationQueue.add('Reservation Confirmation', confirmationData, {delay: 4500});
+        }
+    ).then(
+            _ => {
+                return res.status(201).json({
+                    message: 'Reservation created',
+                });
+            }
+        ).catch(
+        err => next(err)
+    );
 }
 
 exports.deleteReservation = (req, res, next) => {
