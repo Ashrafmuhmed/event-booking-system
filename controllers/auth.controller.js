@@ -1,5 +1,6 @@
 const User = require('../models/user.model');
 const bcrypt = require('bcrypt');
+const crypto = require('crypto');
 const {Op} = require("sequelize");
 const sgmail = require('@sendgrid/mail');
 sgmail.setApiKey(process.env.SENDGRID_API_KEY);
@@ -9,21 +10,16 @@ exports.signupController = (req, res, next) => {
     const {username, email, password, role} = req.body;
 
     User.findOne({
-        where: {username: username}
+        where: {
+            [Op.or]: [{username: username}, {email: email}]
+        }
     }).then(
         user => {
             if (user) {
-                return res.status(400).json("This username is already in use.");
+                const field = user.username === username ? 'username' : 'email';
+                return res.status(400).json(`This ${field} is already in use.`);
             }
-            return User.findOne({
-                where: {email: email}
-            })
-        }
-    ).then(user => {
-        if (user) {
-            return res.status(400).json("This email is already in use.");
-        }
-        return bcrypt.hash(password, 15)
+            return bcrypt.hash(password, 15)
     }).then(
         hashedPassword => {
             return User.create({
@@ -39,7 +35,7 @@ exports.signupController = (req, res, next) => {
             req.session.user = newUser;
             res.status(201).json(newUser);
         }
-    ).catch(err => console.log(err));
+    ).catch(err => next(err));
 };
 
 exports.loginController = (req, res, next) => {
@@ -70,7 +66,7 @@ exports.loginController = (req, res, next) => {
                 }
             )
         }
-    )
+    ).catch(err => next(err));
 
 }
 
@@ -81,10 +77,11 @@ exports.logoutController = (req, res, next) => {
     }
 
     req.session.destroy(err => {
-        console.log(err);
+        if (err) {
+            return next(err);
+        }
+        res.status(200).json("Successfully logged out.");
     });
-
-    res.status(200).json("Successfully logged out.");
 }
 
 exports.getForgetPasswordController = (req, res, next) => {
@@ -100,15 +97,11 @@ exports.getForgetPasswordController = (req, res, next) => {
                 return res.status(401).send("No user found.");
             }
 
-            return crypto.randomBytes(
-                16, (err, buf) => {
-                    if (err) next(err);
-                    return buf.toString('hex');
-                }
-            ).then((token) => {
+            const token = crypto.randomBytes(16).toString('hex');
+            return Promise.resolve().then(() => {
 
                 user.resetToken = token;
-                user.resetTokenExpires = Date.now() + 300000; // the token will expire after 5 min.
+                user.resetTokenExpire = Date.now() + 300000; // the token will expire after 5 min.
                 return user.save()
 
             }).then(
@@ -137,7 +130,7 @@ exports.postResetPasswordController = (req, res, next) => {
     const {token} = req.params;
     const {newPassword} = req.body;
     User.findOne(
-        {where: {resetToken: token, resetExpiryDate: {[Op.gt]: Date.now()}}},
+        {where: {resetToken: token, resetTokenExpire: {[Op.gt]: Date.now()}}},
     ).then(
         user => {
 
@@ -146,7 +139,7 @@ exports.postResetPasswordController = (req, res, next) => {
             }
 
             user.resetToken = undefined;
-            user.resetExpiryDate = undefined;
+            user.resetTokenExpire = undefined;
             return user.save()
                 .then(_ => {
                     bcrypt.hash(newPassword, 10, (err, hash) => {
