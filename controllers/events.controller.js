@@ -7,12 +7,23 @@ exports.createEvent = (req, res, next) => {
 
     const {title, description, date, totalCapacity} = req.body;
 
+     
+    if (!title || !description || !date || !totalCapacity) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Missing required fields'
+        });
+    }
+
     Events.findOne({
         where: {title}
     }).then(
         event => {
             if (event) {
-                return res.json('There is already a event with this title!');
+                return res.status(400).json({
+                    status: 'error',
+                    message: 'There is already an event with this title!'
+                });
             }
 
             return sequelize.transaction(async (transaction) => {
@@ -29,9 +40,10 @@ exports.createEvent = (req, res, next) => {
         }
     ).then(
         event => {
-            return res.status(200).json({
+            return res.status(201).json({
                 status: 'success',
-                message: 'Event created!',
+                message: 'Event created successfully!',
+                event: event
             });
         }
     ).catch(
@@ -52,15 +64,16 @@ exports.getEvents = (req, res, next) => {
                 attributes: []
             }
         },
-        attributes: ['id', 'title', 'description', 'totalCapacity', 'availableCapacity'],
+        attributes: ['id', 'title', 'description', 'date', 'totalCapacity', 'availableCapacity'],
     }).then(
         events => {
-            return res.json(events);
+            return res.status(200).json({
+                status: 'success',
+                events: events
+            });
         }
     ).catch(error => {
-        res.status(500).send({
-            message: error.message,
-        })
+        next(error);
     })
 
 }
@@ -69,16 +82,39 @@ exports.getEvent = (req, res, next) => {
 
     const {title} = req.body;
 
+     
+    if (!title) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Title is required'
+        });
+    }
+
     Events.findAll({
         where: {
             title: {
                 [Op.iLike]: `%${title}%`
             }
+        },
+        include: {
+            model: Users,
+            as: 'organizers',
+            attributes: ['id', 'username', 'email'],
+            through: {
+                attributes: []
+            }
         }
     }).then(
         events => {
 
-            res.json({
+            if (events.length === 0) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'No events found'
+                });
+            }
+
+            res.status(200).json({
                 status: 'success',
                 events
             });
@@ -93,6 +129,13 @@ exports.getEvent = (req, res, next) => {
 exports.removeEvent = (req, res, next) => {
 
     const {id} = req.body;
+
+    if (!id) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Event ID is required'
+        });
+    }
 
     Events.findByPk(
         id,
@@ -143,14 +186,17 @@ exports.removeEvent = (req, res, next) => {
 const extractReservations = (event) => {
 
     const reservations = [];
+    if (!event || !event.reservations) {
+        return [];
+    }
 
     event.reservations.forEach(
         reservation => {
             const res = {
-                reservationId: reservation.reservation.id,
-                username: reservation.username,
-                email: reservation.email,
-                quantity: reservation.reservation.quantity,
+        reservationId: reservation.reservation.id,
+        username: reservation.username,
+        email: reservation.email,
+        quantity: reservation.reservation.quantity,
             };
             reservations.push(res);
         }
@@ -163,6 +209,13 @@ const extractReservations = (event) => {
 exports.getEventReservations = (req, res, next) => {
 
     const {eventId} = req.body;
+
+    if (!eventId) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'Event ID is required'
+        });
+    }
 
     Events.findByPk(eventId, {
         include: [
@@ -182,6 +235,13 @@ exports.getEventReservations = (req, res, next) => {
     }).then(
         event => {
 
+            if (!event) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'Event not found'
+                });
+            }
+
             const {organizers} = event;
             let canAccess = false;
 
@@ -195,7 +255,7 @@ exports.getEventReservations = (req, res, next) => {
 
             const reservations = extractReservations(event);
 
-            res.json({
+            res.status(200).json({
                 status: 'success',
                 reservations,
             });
