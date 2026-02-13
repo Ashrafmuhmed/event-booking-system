@@ -23,10 +23,17 @@ exports.getEventsOrgByUser = (req, res, next) => {
 
     const {id} = req.body;
 
+    if (!id) {
+        return res.status(400).json({
+            status: 'error',
+            message: 'User ID is required'
+        });
+    }
+
     Users.findByPk(
         id,
         {
-            attributes: ['username', 'email'],
+            attributes: ['username', 'email', 'role'],
             include: [
                 {
                     model: Events,
@@ -39,7 +46,7 @@ exports.getEventsOrgByUser = (req, res, next) => {
     ).then(
         user => {
             if (!user)
-                return next(new Error('User does not exist'));
+                throw new Error('User does not exist');
 
             res.status(200).json({
                 message: 'user fetched successfully',
@@ -68,8 +75,29 @@ exports.getReservations = (req, res, next) => {
         }
     ).then(
         user => {
-            res.json(user);
+            if (!user) {
+                return res.status(404).json({
+                    status: 'error',
+                    message: 'User not found'
+                });
+            }
+
+            if (!user.reservatedEvents || user.reservatedEvents.length === 0) {
+                return res.status(200).json({
+                    status: 'success',
+                    message: 'No reservations found',
+                    reservations: []
+                });
+            }
+
+            res.status(200).json({
+                status: 'success',
+                message: 'Reservations fetched successfully',
+                reservations: user.reservatedEvents
+            });
         }
-    )
+    ).catch(
+        err => next(err)
+    );
 
 };
