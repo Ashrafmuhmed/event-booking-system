@@ -4,133 +4,105 @@ const Event = require('../models/event.model');
 const User = require('../models/user.model');
 const reservationQueue = require('../queues/queue_reservation_confirmation');
 
-exports.postReservation = (req, res, next) => {
+exports.postReservation = async (req, res, next) => {
 
     const {eventId, quantity} = req.body;
     const userId = req.user.id;
     console.log('Event reservation id ', eventId);
     let confirmationData;
 
-    sequelize.transaction(
-        (transaction) => {
+    try {
+        await sequelize.transaction(
+            async (transaction) => {
 
-            return Event.findByPk(eventId, {
-                lock: transaction.LOCK.UPDATE,
-                transaction,
-            }).then(
-                (event) => {
-                    if (!event) {
-                        throw new Error('Event doesnt exist');
-                    }
-
-                    if (event.availableCapacity < quantity) {
-                        throw new Error('Available capacity is less then the quntity u need');
-                    }
-                    event.availableCapacity -= quantity;
-
-                    return Reservation.findOne({
-                        where: {userId, eventId},
-                        transaction,
-                        lock: transaction.LOCK.UPDATE
-                    }).then(
-                        existingReservation => {
-                            if (existingReservation) {
-                                existingReservation.quantity += quantity;
-                                return existingReservation.save({transaction}).then(
-                                    _ => {
-                                        return event.save({transaction});
-                                    }
-                                );
-                            } else {
-                                return event.save({transaction}).then(
-                                    _ => {
-                                        return event.addReservation(userId, {
-                                                through: {
-                                                    quantity,
-                                                },
-                                                transaction
-                                            },
-                                        ).then(
-                                            _ => {
-                                                return User.findByPk(userId, {
-                                                    include: [{
-                                                        model: Event,
-                                                        as: 'reservatedEvents'
-                                                    }],
-                                                    transaction
-                                                }).then(user => {
-                                                    const events = user.reservatedEvents;
-                                                    const reservationId = events.find(ev => ev.eventId === eventId).id;
-                                                    confirmationData = {
-                                                        username: user.username,
-                                                        email: user.email,
-                                                        eventName: event.eventName,
-                                                        reservationId
-                                                    };
-                                                })
-                                            }
-                                        );
-                                    }
-                                );
-                            }
-
-                        }
-                    )
+                const event = await Event.findByPk(eventId, {
+                    lock: transaction.LOCK.UPDATE,
+                    transaction,
+                })
+                if (!event) {
+                    throw new Error('Event doesnt exist');
                 }
-            )
-        }
-    ).then(
-        _ => {
-            return reservationQueue.add('Reservation Confirmation', confirmationData, {delay: 4500});
-        }
-    ).then(
-            _ => {
-                return res.status(201).json({
-                    message: 'Reservation created',
-                });
-            }
-        ).catch(
-        err => next(err)
-    );
-}
 
-exports.deleteReservation = (req, res, next) => {
+                if (event.availableCapacity < quantity) {
+                    throw new Error('Available capacity is less then the quntity u need');
+                }
+                event.availableCapacity -= quantity;
+
+                const existingReservation = await Reservation.findOne({
+                    where: {userId, eventId},
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                })
+                if (existingReservation) {
+                    existingReservation.quantity += quantity;
+                    await existingReservation.save({transaction})
+                    await event.save({transaction});
+                } else {
+                    await event.save({transaction})
+                    await event.addReservation(userId, {
+                            through: {
+                                quantity,
+                            },
+                            transaction
+                        },
+                    )
+                    const user = await User.findByPk(userId, {
+                        include: [{
+                            model: Event,
+                            as: 'reservatedEvents'
+                        }],
+                        transaction
+                    });
+                    const events = user.reservatedEvents;
+                    const reservationId = events.find(ev => ev.eventId === eventId).id;
+                    confirmationData = {
+                        username: user.username,
+                        email: user.email,
+                        eventName: event.eventName,
+                        reservationId
+                    };
+                    await reservationQueue.add('Reservation Confirmation', confirmationData, {delay: 4500});
+                }
+            });
+        res.status(201).json({
+            message: 'Reservation created',
+        });
+    } catch (error) {
+        next(error);
+    }
+}
+exports.deleteReservation = async (req, res, next) => {
 
     const {eventId} = req.body;
     const userId = req.user.id;
 
-    Reservation.findOne({
-        where: {
-            eventId, userId
-        }
-    }).then(
-        reservation => {
-
-            if (!reservation) {
-                throw new Error('Reservation not found.');
+    try {
+        const reservation = await Reservation.findOne({
+            where: {
+                eventId, userId
             }
+        })
 
-            return Event.findByPk(eventId).then(
-                event => {
-                    if (!event) {
-                        throw new Error('Event doesnt exist');
-                    }
-                    event.availableCapacity += reservation.quantity;
-                    return event.save();
-                }
-            ).then(
-                _ => reservation.destroy()
-            )
+        if (!reservation) {
+            throw new Error('Reservation not found.');
+        }
 
+        const event = await Event.findByPk(eventId)
+
+        if (!event) {
+            throw new Error('Event doesnt exist');
         }
-    ).then(
-        _ => {
-            res.status(201).json({
-                message: 'Reservation deleted',
-            })
-        }
-    ).catch(
-        err => next(err)
-    );
+        event.availableCapacity += reservation.quantity;
+        await event.save();
+
+        await reservation.destroy()
+
+        res.status(201).json({
+            message: 'Reservation deleted',
+        });
+    } catch (error) {
+        next(error);
+    }
+
 
 }

@@ -1,5 +1,6 @@
 const express = require("express");
 const dotenv = require("dotenv");
+dotenv.config();
 const sequelize = require("./utils/db-connection");
 const session = require("express-session");
 const pg = require("pg");
@@ -35,25 +36,25 @@ const sessionMiddleware = session({
         maxAge: 1000 * 60 * 60,
     },
 });
-dotenv.config();
 app.use(express.json());
 app.use(sessionMiddleware);
 
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
+
     if (req.session.user) {
-        User.findByPk(req.session.user.id)
-            .then((user) => {
-                if (!user) {
-                    req.session.destroy();
-                    return res.status(401).send({
-                        message: "Error occured, please try again later",
-                    });
-                }
-                req.user = user;
-                // console.log(user);
-                next();
-            })
-            .catch((err) => next(err));
+        try {
+            const user = await User.findByPk(req.session.user.id)
+            if (!user) {
+                req.session.destroy();
+                return res.status(401).send({
+                    message: "Error occured, please try again later",
+                });
+            }
+            req.user = user;
+            next();
+        } catch (error) {
+            next(error);
+        }
     } else next();
 });
 
@@ -70,15 +71,12 @@ app.use((err, req, res, next) => {
     });
 });
 
-sequelize
-    .sync({force: false})
-    // .authenticate()
-    .then(() => {
-        initAssociations();
-        console.log("DATA BASE CONNECTED");
-        app.listen(process.env.PORT);
-        console.log("SERVER IS LISTENING NOW TO THE PORT");
-    })
-    .catch((err) => {
-        console.log(err.message);
-    });
+await sequelize.sync({force: false})
+
+// .authenticate()
+
+initAssociations();
+
+console.log("DATA BASE CONNECTED");
+app.listen(process.env.PORT);
+console.log("SERVER IS LISTENING NOW TO THE PORT");

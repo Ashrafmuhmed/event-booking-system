@@ -5,9 +5,8 @@ const LIMIT = 10;
 exports.getUsers = async (req, res, next) => {
 
     const pg = !req.query.pg ? 1 : req.query.pg;
-
     try {
-        const users = Users.findAll({
+        const users = await Users.findAll({
             limit: LIMIT,
             offset: LIMIT * (pg - 1)
         });
@@ -64,7 +63,7 @@ exports.getReservations = async (req, res, next) => {
     const userId = req.user.id;
 
     try{
-        const user = Users.findByPk(
+        const user = await Users.findByPk(
             userId, {
                 attributes: ['username', 'email'],
                 include: [{
