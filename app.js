@@ -13,16 +13,18 @@ const Event = require("./models/event.model");
 const Reservations = require('./models/reservations.model');
 const EventOrganizers = require("./models/event_organizer.model");
 const {isAuthenticated} = require("./middlewares/isAuthenticated.middleware");
+const {apiLimiter, authLimiter, eventsLimiter, reservationLimiter} = require("./middlewares/rateLimit.middleware");
 
 const app = express();
 
 app.use(express.json());
 app.use(cookieParser());
 
-app.use(authRoutes);
-app.use(isAuthenticated, eventsRoutes);
+app.use(apiLimiter);
+app.use(authRoutes, authLimiter); 
+app.use(isAuthenticated, eventsLimiter, eventsRoutes);
 app.use(isAuthenticated, userRoutes);
-app.use(isAuthenticated, reservationRoutes);
+app.use(isAuthenticated, reservationLimiter, reservationRoutes);
 
 app.use((err, req, res, next) => {
     console.error(err.message);
